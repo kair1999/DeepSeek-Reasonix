@@ -76,12 +76,20 @@ func New(cfg provider.Config) (provider.Provider, error) {
 	case protocol == "none":
 		effort = ""
 	case deepseek:
+		// DeepSeek supports thinking on/off via thinking.type, plus reasoning_effort
+		// for depth. "disabled" means turn off CoT entirely (faster, cheaper for
+		// simple tasks). The original code hard-coded thinking to "enabled" and
+		// never allowed users to disable it — that was overly restrictive since
+		// the official API explicitly supports toggling thinking off. Not every
+		// task needs a chain-of-thought; simple lookups and quick Q&A are faster
+		// and cheaper without it. We now honour an explicit "disabled" effort.
 		switch effort {
-		case "", "off": // "off" is a retired level (disabled thinking); fall back to the default depth
+		case "", "off": // "off" is a retired level; fall back to the default depth
 			effort = "high"
+		case "disabled": // user explicitly turned off thinking
 		case "high", "max":
 		default:
-			return nil, fmt.Errorf("openai: provider %q uses DeepSeek thinking; effort must be high or max", name)
+			return nil, fmt.Errorf("openai: provider %q uses DeepSeek thinking; effort must be disabled, high, or max", name)
 		}
 	case minimax:
 		// M3's knob is binary. The config effort layer normalises user input
@@ -332,9 +340,17 @@ func (c *client) buildRequest(req provider.Request) chatRequest {
 	}
 	switch {
 	case c.deepseek:
-		// DeepSeek's CoT is controlled by `thinking` (always on) plus
-		// `reasoning_effort` for depth. We never disable thinking for DeepSeek.
-		out.Thinking = &thinkingMode{Type: "enabled"}
+		// DeepSeek's CoT is controlled by `thinking` (enabled/disabled) plus
+		// `reasoning_effort` for depth. When the user picks "disabled" we turn
+		// off chain-of-thought entirely — the API officially supports this and
+		// it makes simple/quick tasks faster and cheaper. Forcing every request
+		// through deep reasoning was needlessly expensive for trivial work.
+		if c.effort == "disabled" {
+			out.Thinking = &thinkingMode{Type: "disabled"}
+			out.ReasoningEffort = ""
+		} else {
+			out.Thinking = &thinkingMode{Type: "enabled"}
+		}
 	case c.minimax:
 		// M3 uses a single `thinking.type` field with two valid values:
 		// "adaptive" (default, thinking on) and "disabled" (off). Reasoning

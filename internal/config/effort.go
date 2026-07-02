@@ -29,8 +29,8 @@ type modelReasoningCapability struct {
 }
 
 var modelReasoningCapabilities = map[string]modelReasoningCapability{
-	"deepseek-v4-flash": {Protocol: ReasoningProtocolDeepSeek, Levels: []string{"high", "max"}, Default: "high"},
-	"deepseek-v4-pro":   {Protocol: ReasoningProtocolDeepSeek, Levels: []string{"high", "max"}, Default: "high"},
+	"deepseek-v4-flash": {Protocol: ReasoningProtocolDeepSeek, Levels: []string{"disabled", "high", "max"}, Default: "high"},
+	"deepseek-v4-pro":   {Protocol: ReasoningProtocolDeepSeek, Levels: []string{"disabled", "high", "max"}, Default: "high"},
 }
 
 // EffortCapabilityForEntry returns the user-facing /effort levels for a resolved
@@ -104,6 +104,8 @@ func NormalizeEffort(e *ProviderEntry, raw string) (string, error) {
 	switch ReasoningProtocolForEntry(e) {
 	case ReasoningProtocolDeepSeek:
 		switch level {
+		case "disabled":
+			return "disabled", nil
 		case "high", "max":
 			return level, nil
 		case "low", "medium":
@@ -111,7 +113,7 @@ func NormalizeEffort(e *ProviderEntry, raw string) (string, error) {
 		case "xhigh":
 			return "max", nil
 		default:
-			return "", fmt.Errorf("usage: /effort auto|high|max")
+			return "", fmt.Errorf("usage: /effort auto|disabled|high|max")
 		}
 	case ReasoningProtocolOpenAI:
 		switch level {
@@ -282,7 +284,10 @@ func effortCapabilityFromModel(cap modelReasoningCapability) EffortCapability {
 }
 
 func deepSeekEffortCapability() EffortCapability {
-	return EffortCapability{Supported: true, Levels: []string{"auto", "high", "max"}, Default: "high"}
+	// "disabled" lets the user turn off chain-of-thought entirely for simple
+	// tasks where deep reasoning is unnecessary — the official API supports
+	// thinking.type=disabled, and hiding that option only wastes tokens and time.
+	return EffortCapability{Supported: true, Levels: []string{"auto", "disabled", "high", "max"}, Default: "high"}
 }
 
 func openAIEffortCapability() EffortCapability {
